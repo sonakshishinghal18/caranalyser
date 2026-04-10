@@ -3,7 +3,7 @@ services:
     name: cariq-india
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --workers 2 --bind 0.0.0.0:$PORT --timeout 120
+    startCommand: gunicorn app:app --workers 1 --worker-class sync --bind 0.0.0.0:$PORT --timeout 180 --max-requests 100 --max-requests-jitter 10
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
