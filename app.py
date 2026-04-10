@@ -69,8 +69,8 @@ Important: prices in Rs X.XX Lakh format. Return ONLY the JSON."""
 
 def call_claude_image(b64, mime):
     r = client.messages.create(
-        model="claude-opus-4-5",
-        max_tokens=4000,
+        model="claude-sonnet-4-5",
+        max_tokens=2000,
         system=PROMPT,
         messages=[{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
@@ -82,8 +82,8 @@ def call_claude_image(b64, mime):
 
 def call_claude_text(query):
     r = client.messages.create(
-        model="claude-opus-4-5",
-        max_tokens=4000,
+        model="claude-sonnet-4-5",
+        max_tokens=2000,
         system=PROMPT,
         messages=[{"role": "user", "content": "Car: " + query + ". Return JSON only."}]
     )
