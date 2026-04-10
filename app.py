@@ -1,6 +1,8 @@
 import os
 import json
 import re
+import urllib.request
+import urllib.parse
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import anthropic
@@ -95,6 +97,41 @@ def clean_json(text):
     return json.loads(text.strip())
 
 
+def fetch_car_images(car_name, num=6):
+    """Fetch car images using Google Custom Search API."""
+    api_key = os.environ.get("GOOGLE_API_KEY")
+    cx      = os.environ.get("GOOGLE_CX")
+    if not api_key or not cx:
+        return []
+    try:
+        queries = [
+            car_name + " exterior India official",
+            car_name + " interior dashboard India",
+        ]
+        images = []
+        for q in queries:
+            params = urllib.parse.urlencode({
+                "key": api_key, "cx": cx,
+                "q": q, "searchType": "image",
+                "num": 3, "imgSize": "large",
+                "safe": "active"
+            })
+            url = "https://www.googleapis.com/customsearch/v1?" + params
+            req = urllib.request.Request(url, headers={"User-Agent": "CarIQ/1.0"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read())
+            for item in data.get("items", []):
+                images.append({
+                    "url":   item.get("link", ""),
+                    "thumb": item.get("image", {}).get("thumbnailLink", ""),
+                    "title": item.get("title", ""),
+                    "type":  "interior" if "interior" in q else "exterior"
+                })
+        return images[:num]
+    except Exception:
+        return []
+
+
 @app.route("/")
 def index():
     return send_from_directory(BASE_DIR, "index.html")
@@ -107,6 +144,7 @@ def api_text():
         if not body or not body.get("query"):
             return jsonify({"success": False, "error": "No query"}), 400
         data = call_claude_text(body["query"])
+        data["images"] = fetch_car_images(data.get("car_name") or body["query"])
         return jsonify({"success": True, "data": data})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -125,6 +163,7 @@ def api_image():
         else:
             b64, mime = img, "image/jpeg"
         data = call_claude_image(b64, mime)
+        data["images"] = fetch_car_images(data.get("car_name") or "car India")
         return jsonify({"success": True, "data": data})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
