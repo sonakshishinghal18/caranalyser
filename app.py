@@ -6,15 +6,14 @@ from flask_cors import CORS
 import anthropic
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 app = Flask(__name__, static_folder=BASE_DIR, static_url_path="")
 CORS(app)
 
 client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
-CAR_PROMPT = """You are an expert on cars sold in India. Given a car name or image, return ONLY a JSON object with no extra text, no markdown fences, no explanation.
+CAR_PROMPT = """You are an expert on cars sold in India. Return ONLY a JSON object, no markdown, no explanation.
 
-Return this exact JSON structure:
+JSON structure:
 {
   "car_name": "Full name",
   "brand": "Brand",
@@ -32,37 +31,37 @@ Return this exact JSON structure:
     "engine": "1.2L Turbo",
     "power": "100 bhp",
     "torque": "170 Nm",
-    "transmission": "6-speed Manual / AMT",
+    "transmission": "Manual / AMT",
     "mileage_arai": "18.76 kmpl",
     "0_to_100": "11.2 sec",
     "fuel_tank": "37 litres",
     "boot_space": "308 litres"
   },
   "features": {
-    "safety": ["6 Airbags", "ESC"],
-    "comfort": ["Ventilated seats", "Sunroof"],
-    "technology": ["ADAS Level 2", "OTA updates"],
-    "infotainment": ["10.25-inch touchscreen", "Wireless Android Auto"]
+    "safety": ["6 Airbags"],
+    "comfort": ["Sunroof"],
+    "technology": ["ADAS"],
+    "infotainment": ["10.25-inch touchscreen"]
   },
   "interior": {
     "quality": "Good",
     "screen_size": "10.25-inch",
     "seating": "5-seater",
     "upholstery": "Leatherette",
-    "highlights": ["Dual-tone dashboard", "Ambient lighting"]
+    "highlights": ["Ambient lighting"]
   },
-  "pros": ["Spacious cabin", "Feature-loaded", "Good mileage"],
-  "cons": ["Average ride quality", "No diesel option"],
+  "pros": ["Spacious cabin", "Good mileage"],
+  "cons": ["Average ride quality"],
   "competitors": [
     {"name": "Hyundai Venue", "price_range": "Rs 7.94-13.35 Lakh", "advantage": "Better resale value"}
   ],
-  "interesting_facts": ["Fact 1", "Fact 2"],
-  "best_variant_pick": "Mid variant XZ+ offers best value",
-  "target_buyer": "Young families and first-time SUV buyers",
+  "interesting_facts": ["Best-selling compact SUV in 2023"],
+  "best_variant_pick": "Mid variant offers best value",
+  "target_buyer": "Young families",
   "confidence": "high"
 }
 
-IMPORTANT: Output ONLY the raw JSON. No markdown. No backticks. No explanation. Start with { and end with }"""
+Start response with { and end with }. No other text."""
 
 
 def clean_json(text):
@@ -77,27 +76,18 @@ def clean_json(text):
     return json.loads(text)
 
 
-def call_claude_text(query):
-    r = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=2000,
+def call_claude(messages):
+    """Single Claude call with streaming to reduce memory."""
+    full_text = ""
+    with client.messages.stream(
+        model="claude-haiku-4-5",
+        max_tokens=1500,
         system=CAR_PROMPT,
-        messages=[{"role": "user", "content": "Provide complete details for: " + query}]
-    )
-    return clean_json(r.content[0].text)
-
-
-def call_claude_image(b64, mime):
-    r = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=2000,
-        system=CAR_PROMPT,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
-            {"type": "text", "text": "Identify this car and provide complete details."}
-        ]}]
-    )
-    return clean_json(r.content[0].text)
+        messages=messages
+    ) as stream:
+        for text in stream.text_stream:
+            full_text += text
+    return clean_json(full_text)
 
 
 @app.route("/")
@@ -111,11 +101,11 @@ def api_text():
         body = request.get_json()
         if not body or not body.get("query"):
             return jsonify({"success": False, "error": "No query provided"}), 400
-        data = call_claude_text(body["query"])
+        data = call_claude([{"role": "user", "content": "Car: " + body["query"]}])
         data["images"] = []
         return jsonify({"success": True, "data": data})
     except Exception as e:
-        print("ERROR api_text:", str(e), flush=True)
+        print("ERROR:", str(e), flush=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -131,11 +121,17 @@ def api_image():
             mime = header.split(":")[1].split(";")[0]
         else:
             b64, mime = img, "image/jpeg"
-        data = call_claude_image(b64, mime)
+        # Resize large images to reduce memory — cap base64 size
+        if len(b64) > 1_000_000:  # > ~750KB image
+            return jsonify({"success": False, "error": "Image too large. Please use a smaller photo (under 1MB)."}), 400
+        data = call_claude([{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
+            {"type": "text", "text": "Identify this car."}
+        ]}])
         data["images"] = []
         return jsonify({"success": True, "data": data})
     except Exception as e:
-        print("ERROR api_image:", str(e), flush=True)
+        print("ERROR:", str(e), flush=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 
