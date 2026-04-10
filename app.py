@@ -99,14 +99,17 @@ def clean_json(text):
 
 def fetch_car_images(car_name, num=6):
     """Fetch car images using Google Custom Search API."""
-    api_key = os.environ.get("GOOGLE_API_KEY")
-    cx      = os.environ.get("GOOGLE_CX")
+    import sys
+    api_key = os.environ.get("GOOGLE_API_KEY", "")
+    cx      = os.environ.get("GOOGLE_CX", "")
     if not api_key or not cx:
+        print("IMAGE: missing keys", flush=True)
         return []
+    print("IMAGE: key=" + api_key[:8] + " cx=" + cx, flush=True)
     try:
         queries = [
-            car_name + " exterior India official",
-            car_name + " interior dashboard India",
+            car_name + " car exterior India",
+            car_name + " car interior India",
         ]
         images = []
         for q in queries:
@@ -117,18 +120,27 @@ def fetch_car_images(car_name, num=6):
                 "safe": "active"
             })
             url = "https://www.googleapis.com/customsearch/v1?" + params
+            print("IMAGE: GET " + url[:100], flush=True)
             req = urllib.request.Request(url, headers={"User-Agent": "CarIQ/1.0"})
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                data = json.loads(resp.read())
-            for item in data.get("items", []):
-                images.append({
-                    "url":   item.get("link", ""),
-                    "thumb": item.get("image", {}).get("thumbnailLink", ""),
-                    "title": item.get("title", ""),
-                    "type":  "interior" if "interior" in q else "exterior"
-                })
+            try:
+                with urllib.request.urlopen(req, timeout=8) as resp:
+                    raw = resp.read()
+                data = json.loads(raw)
+                items = data.get("items", [])
+                print("IMAGE: got " + str(len(items)) + " items", flush=True)
+                for item in items:
+                    images.append({
+                        "url":   item.get("link", ""),
+                        "thumb": item.get("image", {}).get("thumbnailLink", ""),
+                        "title": item.get("title", ""),
+                        "type":  "interior" if "interior" in q else "exterior"
+                    })
+            except Exception as inner:
+                print("IMAGE inner error: " + str(inner), file=sys.stderr, flush=True)
+        print("IMAGE: total=" + str(len(images)), flush=True)
         return images[:num]
-    except Exception:
+    except Exception as e:
+        print("IMAGE outer error: " + str(e), file=sys.stderr, flush=True)
         return []
 
 
