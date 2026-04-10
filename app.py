@@ -1,8 +1,6 @@
 import os
 import json
 import re
-import urllib.request
-import urllib.parse
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import anthropic
@@ -14,7 +12,7 @@ CORS(app)
 
 client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
-PROMPT = """You are an expert on cars sold in India. Given a car name or image, return ONLY a JSON object with no extra text, no markdown fences.
+CAR_PROMPT = """You are an expert on cars sold in India. Given a car name or image, return ONLY a JSON object with no extra text, no markdown fences.
 
 JSON format:
 {
@@ -66,28 +64,21 @@ JSON format:
 
 Important: prices in Rs X.XX Lakh format. Return ONLY the JSON."""
 
+IMAGE_PROMPT = """You are a car image finder. When given a car name, use the web_search tool to find real photo URLs of that car from Indian automotive websites like cardekho.com, carwale.com, zigwheels.com, autocarindia.com, team-bhp.com.
 
-def call_claude_image(b64, mime):
-    r = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=2000,
-        system=PROMPT,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
-            {"type": "text", "text": "Identify this car and return JSON only."}
-        ]}]
-    )
-    return clean_json(r.content[0].text)
+Find 3 exterior photos and 2 interior/dashboard photos.
 
+Return ONLY a JSON array, no other text:
+[
+  {"url": "https://...", "title": "Car name exterior", "type": "exterior"},
+  {"url": "https://...", "title": "Car name interior", "type": "interior"}
+]
 
-def call_claude_text(query):
-    r = client.messages.create(
-        model="claude-sonnet-4-5",
-        max_tokens=2000,
-        system=PROMPT,
-        messages=[{"role": "user", "content": "Car: " + query + ". Return JSON only."}]
-    )
-    return clean_json(r.content[0].text)
+Rules:
+- Only include direct image URLs ending in .jpg .jpeg .png .webp
+- URLs must be real, publicly accessible image files
+- Return empty array [] if no valid image URLs found
+- Return ONLY the JSON array"""
 
 
 def clean_json(text):
@@ -97,50 +88,64 @@ def clean_json(text):
     return json.loads(text.strip())
 
 
-def fetch_car_images(car_name, num=6):
-    """Fetch car images using Google Custom Search API."""
-    import sys
-    api_key = os.environ.get("GOOGLE_API_KEY", "")
-    cx      = os.environ.get("GOOGLE_CX", "")
-    if not api_key or not cx:
-        print("IMAGE: missing keys", flush=True)
-        return []
-    print("IMAGE: key=" + api_key[:8] + " cx=" + cx, flush=True)
+def call_claude_text(query):
+    r = client.messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=2000,
+        system=CAR_PROMPT,
+        messages=[{"role": "user", "content": "Car: " + query + ". Return JSON only."}]
+    )
+    return clean_json(r.content[0].text)
+
+
+def call_claude_image(b64, mime):
+    r = client.messages.create(
+        model="claude-sonnet-4-5",
+        max_tokens=2000,
+        system=CAR_PROMPT,
+        messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": mime, "data": b64}},
+            {"type": "text", "text": "Identify this car and return JSON only."}
+        ]}]
+    )
+    return clean_json(r.content[0].text)
+
+
+def fetch_images_via_claude(car_name):
+    """Use Claude with web_search tool to find real car image URLs."""
     try:
-        queries = [
-            car_name + " car exterior India",
-            car_name + " car interior India",
-        ]
-        images = []
-        for q in queries:
-            params = urllib.parse.urlencode({
-                "key": api_key, "cx": cx,
-                "q": q, "searchType": "image",
-                "num": 3, "imgSize": "large",
-                "safe": "active"
-            })
-            url = "https://www.googleapis.com/customsearch/v1?" + params
-            print("IMAGE: GET " + url[:100], flush=True)
-            req = urllib.request.Request(url, headers={"User-Agent": "CarIQ/1.0"})
-            try:
-                with urllib.request.urlopen(req, timeout=8) as resp:
-                    raw = resp.read()
-                data = json.loads(raw)
-                items = data.get("items", [])
-                print("IMAGE: got " + str(len(items)) + " items", flush=True)
-                for item in items:
-                    images.append({
-                        "url":   item.get("link", ""),
-                        "thumb": item.get("image", {}).get("thumbnailLink", ""),
-                        "title": item.get("title", ""),
-                        "type":  "interior" if "interior" in q else "exterior"
-                    })
-            except Exception as inner:
-                print("IMAGE inner error: " + str(inner), file=sys.stderr, flush=True)
-        print("IMAGE: total=" + str(len(images)), flush=True)
-        return images[:num]
+        r = client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=1000,
+            system=IMAGE_PROMPT,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{
+                "role": "user",
+                "content": "Find real photo URLs for: " + car_name + " India. Return JSON array only."
+            }]
+        )
+        # Extract text from response (may include tool use blocks)
+        text = ""
+        for block in r.content:
+            if hasattr(block, "text"):
+                text += block.text
+        if not text.strip():
+            return []
+        text = text.strip()
+        text = re.sub(r"^```[a-z]*\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+        result = json.loads(text.strip())
+        if isinstance(result, list):
+            # Validate URLs are actual image files
+            valid = []
+            for img in result:
+                url = img.get("url", "")
+                if url and any(url.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp"]):
+                    valid.append(img)
+            return valid[:6]
+        return []
     except Exception as e:
-        print("IMAGE outer error: " + str(e), file=sys.stderr, flush=True)
+        print("IMAGE via Claude error: " + str(e), flush=True)
         return []
 
 
@@ -156,7 +161,7 @@ def api_text():
         if not body or not body.get("query"):
             return jsonify({"success": False, "error": "No query"}), 400
         data = call_claude_text(body["query"])
-        data["images"] = fetch_car_images(data.get("car_name") or body["query"])
+        data["images"] = fetch_images_via_claude(data.get("car_name") or body["query"])
         return jsonify({"success": True, "data": data})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
@@ -175,7 +180,7 @@ def api_image():
         else:
             b64, mime = img, "image/jpeg"
         data = call_claude_image(b64, mime)
-        data["images"] = fetch_car_images(data.get("car_name") or "car India")
+        data["images"] = fetch_images_via_claude(data.get("car_name") or "car")
         return jsonify({"success": True, "data": data})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
