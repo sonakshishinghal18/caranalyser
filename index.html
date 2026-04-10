@@ -285,6 +285,21 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
   font-size:13px;color:var(--text2);line-height:1.4}
 .fn{font-family:var(--fm);font-size:11px;color:var(--accent);width:20px;flex-shrink:0}
 
+/* GALLERY */
+.gallery-section { margin-bottom: 28px; }
+.gallery-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.gallery-img-wrap { border-radius: 12px; overflow: hidden; aspect-ratio: 16/10; background: var(--bg3); border: 1px solid var(--border); cursor: pointer; position: relative; }
+.gallery-img-wrap img { width: 100%; height: 100%; object-fit: cover; transition: transform .3s; display: block; }
+.gallery-img-wrap:hover img { transform: scale(1.05); }
+.gallery-label { position: absolute; bottom: 0; left: 0; right: 0; padding: 6px 10px; background: linear-gradient(transparent, rgba(0,0,0,.7)); font-size: 10px; color: rgba(255,255,255,.7); font-family: var(--fm); }
+.gallery-type { position: absolute; top: 8px; left: 8px; font-family: var(--fm); font-size: 9px; letter-spacing: 1px; text-transform: uppercase; padding: 3px 8px; border-radius: 10px; }
+.gallery-type.ext { background: rgba(232,53,46,.8); color: #fff; }
+.gallery-type.int { background: rgba(201,168,76,.8); color: #000; }
+.lightbox { position: fixed; inset: 0; z-index: 300; background: rgba(0,0,0,.95); display: flex; align-items: center; justify-content: center; }
+.lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 12px; object-fit: contain; }
+.lightbox-close { position: absolute; top: 20px; right: 24px; background: none; border: none; color: #fff; font-size: 32px; cursor: pointer; line-height: 1; }
+@media(max-width:600px){ .gallery-grid { grid-template-columns: repeat(2,1fr); } }
+
 /* RESET */
 .rwrap{text-align:center;margin-top:48px}
 .rbtn{display:inline-flex;align-items:center;gap:10px;padding:14px 28px;
@@ -453,6 +468,12 @@ footer{position:relative;z-index:1;text-align:center;padding:24px;
       <div class="binit" id="rInitial"></div>
     </div>
 
+    <!-- IMAGE GALLERY -->
+    <div class="gallery-section card wide" id="gallerySection" style="display:none">
+      <div class="ch"><div class="ci">&#9635;</div><h3>Photos</h3><span class="cnote">Exterior &amp; Interior</span></div>
+      <div class="gallery-grid" id="galleryGrid"></div>
+    </div>
+
     <div class="grid">
       <div class="card">
         <div class="ch"><div class="ci">Rs</div><h3>Pricing</h3><span class="cnote">Ex-showroom, Delhi</span></div>
@@ -508,6 +529,12 @@ footer{position:relative;z-index:1;text-align:center;padding:24px;
 </section>
 
 <footer>CarIQ India &mdash; Smart car research for Indian buyers &mdash; Prices are indicative, verify with dealer</footer>
+
+<!-- LIGHTBOX -->
+<div class="lightbox" id="lightbox" style="display:none">
+  <button class="lightbox-close" id="lbClose">&times;</button>
+  <img id="lbImg" src="" alt=""/>
+</div>
 
 <script>
 // ============================================================
@@ -851,6 +878,9 @@ footer{position:relative;z-index:1;text-align:center;padding:24px;
     g('rFacts').innerHTML = (d.interesting_facts||[]).map(function(f,i){
       return '<div class="fact"><span class="fn">0' + (i+1) + '</span><span>' + esc(f) + '</span></div>';
     }).join('');
+
+    // Gallery
+    renderGallery(d.images || []);
   }
 
   function showFeat(cat) {
@@ -859,6 +889,43 @@ footer{position:relative;z-index:1;text-align:center;padding:24px;
       return '<div class="fi"><div class="fd2"></div><span>' + esc(f) + '</span></div>';
     }).join('');
   }
+
+  // ── Gallery ────────────────────────────────────────────────
+  function renderGallery(images) {
+    if (!images || images.length === 0) {
+      g('gallerySection').style.display = 'none';
+      return;
+    }
+    g('gallerySection').style.display = 'block';
+    g('galleryGrid').innerHTML = images.map(function(img) {
+      var typeClass = img.type === 'interior' ? 'int' : 'ext';
+      var typeLabel = img.type === 'interior' ? 'Interior' : 'Exterior';
+      return '<div class="gallery-img-wrap" data-full="' + esc(img.url) + '">' +
+        '<img src="' + esc(img.url) + '" alt="' + esc(img.title) + '" loading="lazy" onerror="this.parentElement.style.display=\'none\'">' +
+        '<span class="gallery-type ' + typeClass + '">' + typeLabel + '</span>' +
+        '<div class="gallery-label">' + esc(img.title) + '</div>' +
+        '</div>';
+    }).join('');
+
+    // Wire lightbox clicks
+    g('galleryGrid').querySelectorAll('.gallery-img-wrap').forEach(function(el) {
+      el.addEventListener('click', function() {
+        g('lbImg').src = el.getAttribute('data-full');
+        g('lightbox').style.display = 'flex';
+      });
+    });
+  }
+
+  g('lbClose').addEventListener('click', function() {
+    g('lightbox').style.display = 'none';
+    g('lbImg').src = '';
+  });
+  g('lightbox').addEventListener('click', function(e) {
+    if (e.target === g('lightbox')) {
+      g('lightbox').style.display = 'none';
+      g('lbImg').src = '';
+    }
+  });
 
 })();
 </script>
