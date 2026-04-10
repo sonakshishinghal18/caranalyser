@@ -62,17 +62,14 @@ Return this exact JSON structure:
   "confidence": "high"
 }
 
-IMPORTANT: Output ONLY the raw JSON. No markdown. No backticks. No explanation. Start your response with { and end with }"""
+IMPORTANT: Output ONLY the raw JSON. No markdown. No backticks. No explanation. Start with { and end with }"""
 
 
 def clean_json(text):
-    """Robustly extract JSON from Claude response."""
     text = text.strip()
-    # Strip markdown code fences
     text = re.sub(r"^```[a-zA-Z]*\s*", "", text)
     text = re.sub(r"\s*```$", "", text)
     text = text.strip()
-    # Find the first { and last } to extract JSON object
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:
@@ -85,11 +82,9 @@ def call_claude_text(query):
         model="claude-sonnet-4-5",
         max_tokens=2000,
         system=CAR_PROMPT,
-        messages=[{"role": "user", "content": "Provide complete details for this car: " + query}]
+        messages=[{"role": "user", "content": "Provide complete details for: " + query}]
     )
-    raw = r.content[0].text
-    print("CAR TEXT RAW (first 200):", raw[:200], flush=True)
-    return clean_json(raw)
+    return clean_json(r.content[0].text)
 
 
 def call_claude_image(b64, mime):
@@ -102,63 +97,7 @@ def call_claude_image(b64, mime):
             {"type": "text", "text": "Identify this car and provide complete details."}
         ]}]
     )
-    raw = r.content[0].text
-    print("CAR IMAGE RAW (first 200):", raw[:200], flush=True)
-    return clean_json(raw)
-
-
-def fetch_images_via_claude(car_name):
-    """Use Claude with web_search to find real car image URLs."""
-    try:
-        r = client.messages.create(
-            model="claude-sonnet-4-5",
-            max_tokens=1500,
-            tools=[{"type": "web_search_20250305", "name": "web_search"}],
-            messages=[{
-                "role": "user",
-                "content": (
-                    "Search for photos of " + car_name + " car in India. "
-                    "Find direct image URLs (.jpg or .png files) from cardekho.com, carwale.com, or zigwheels.com. "
-                    "Return ONLY a JSON array like: "
-                    '[{"url":"https://...jpg","title":"...","type":"exterior"}] '
-                    "Include 3 exterior and 2 interior photos. "
-                    "Only include URLs that end in .jpg .jpeg .png .webp"
-                )
-            }]
-        )
-        # Collect all text blocks from response
-        text_parts = []
-        for block in r.content:
-            if hasattr(block, "text") and block.text:
-                text_parts.append(block.text)
-        text = " ".join(text_parts).strip()
-        print("IMAGE RAW (first 300):", text[:300], flush=True)
-
-        # Extract JSON array from response
-        start = text.find("[")
-        end = text.rfind("]")
-        if start == -1 or end == -1 or end <= start:
-            print("IMAGE: no array found", flush=True)
-            return []
-        arr_text = text[start:end+1]
-        result = json.loads(arr_text)
-        if not isinstance(result, list):
-            return []
-        # Filter to valid image URLs only
-        valid = []
-        for img in result:
-            url = img.get("url", "")
-            if url and re.search(r"\.(jpg|jpeg|png|webp)(\?.*)?$", url, re.IGNORECASE):
-                valid.append({
-                    "url":   url,
-                    "title": img.get("title", car_name),
-                    "type":  img.get("type", "exterior")
-                })
-        print("IMAGE: valid count =", len(valid), flush=True)
-        return valid[:6]
-    except Exception as e:
-        print("IMAGE ERROR:", str(e), flush=True)
-        return []
+    return clean_json(r.content[0].text)
 
 
 @app.route("/")
@@ -173,13 +112,10 @@ def api_text():
         if not body or not body.get("query"):
             return jsonify({"success": False, "error": "No query provided"}), 400
         data = call_claude_text(body["query"])
-        data["images"] = fetch_images_via_claude(data.get("car_name") or body["query"])
+        data["images"] = []
         return jsonify({"success": True, "data": data})
-    except json.JSONDecodeError as e:
-        print("JSON PARSE ERROR:", str(e), flush=True)
-        return jsonify({"success": False, "error": "Could not parse car data. Please try again."}), 500
     except Exception as e:
-        print("API ERROR:", str(e), flush=True)
+        print("ERROR api_text:", str(e), flush=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 
@@ -196,13 +132,10 @@ def api_image():
         else:
             b64, mime = img, "image/jpeg"
         data = call_claude_image(b64, mime)
-        data["images"] = fetch_images_via_claude(data.get("car_name") or "car")
+        data["images"] = []
         return jsonify({"success": True, "data": data})
-    except json.JSONDecodeError as e:
-        print("JSON PARSE ERROR:", str(e), flush=True)
-        return jsonify({"success": False, "error": "Could not parse car data. Please try again."}), 500
     except Exception as e:
-        print("API ERROR:", str(e), flush=True)
+        print("ERROR api_image:", str(e), flush=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 
