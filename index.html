@@ -300,11 +300,37 @@ body{background:var(--bg);color:var(--text);font-family:var(--fb);min-height:100
 .lightbox-close { position: absolute; top: 20px; right: 24px; background: none; border: none; color: #fff; font-size: 32px; cursor: pointer; line-height: 1; }
 @media(max-width:600px){ .gallery-grid { grid-template-columns: repeat(2,1fr); } }
 
-/* RESET */
+/* RESULTS TOPBAR */
+.results-topbar{
+  position:sticky;top:64px;z-index:90;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:12px 0;margin-bottom:24px;
+  background:rgba(10,10,11,.85);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+}
+.results-car-title{
+  font-family:var(--fd);font-size:22px;letter-spacing:1px;
+  color:var(--text);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;max-width:60%;
+}
+.btn-new-search{
+  display:flex;align-items:center;gap:8px;
+  padding:10px 20px;
+  background:var(--accent);
+  border:none;border-radius:10px;cursor:pointer;
+  font-family:var(--fb);font-size:13px;font-weight:600;
+  color:#fff;transition:all .2s;white-space:nowrap;
+  box-shadow:0 4px 16px rgba(232,53,46,.35);
+}
+.btn-new-search:hover{background:#c42b25;transform:translateY(-1px);
+  box-shadow:0 6px 20px rgba(232,53,46,.45)}
+.btn-new-search svg{flex-shrink:0}
+
+/* RESET (bottom) */
 .rwrap{text-align:center;margin-top:48px}
-.rbtn{display:inline-flex;align-items:center;gap:10px;padding:14px 28px;
+.rbtn{display:inline-flex;align-items:center;gap:8px;padding:12px 24px;
   background:transparent;border:1px solid var(--border2);border-radius:30px;
-  cursor:pointer;font-family:var(--fb);font-size:14px;color:var(--text2);
+  cursor:pointer;font-family:var(--fb);font-size:13px;color:var(--text3);
   transition:all .2s}
 .rbtn:hover{border-color:var(--accent);color:var(--text)}
 
@@ -454,6 +480,16 @@ footer{position:relative;z-index:1;text-align:center;padding:24px;
 <!-- RESULTS -->
 <section class="results" id="resultsSec" style="display:none">
   <div class="rin">
+
+    <!-- STICKY TOP BAR -->
+    <div class="results-topbar">
+      <div class="results-car-title" id="topbarCarName"></div>
+      <button class="btn-new-search" id="btnResetTop">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.87"/></svg>
+        Search Another Car
+      </button>
+    </div>
+
     <div class="banner">
       <div class="bcon">
         <div class="badge" id="rBadge"></div>
@@ -719,7 +755,10 @@ footer{position:relative;z-index:1;text-align:center;padding:24px;
   }
 
   // ── Reset ──────────────────────────────────────────────────
-  g('btnReset').addEventListener('click', function(){
+  g('btnReset').addEventListener('click', doReset);
+  g('btnResetTop').addEventListener('click', doReset);
+
+  function doReset() {
     g('heroSec').style.display    = 'block';
     g('resultsSec').style.display = 'none';
     g('carInput').value = '';
@@ -727,7 +766,7 @@ footer{position:relative;z-index:1;text-align:center;padding:24px;
     capturedImg = null;
     switchTab('Text');
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  });
+  }
 
   // ── API ────────────────────────────────────────────────────
   function callAPI(url, payload) {
@@ -768,6 +807,7 @@ footer{position:relative;z-index:1;text-align:center;padding:24px;
       : p.base_variant || p.top_variant || '';
     var nm = d.car_name || d.model || '?';
     g('rInitial').textContent = nm.split(' ').slice(0,2).map(function(w){return w[0];}).join('').toUpperCase();
+    g('topbarCarName').textContent = nm;
 
     // Pricing
     g('rPbox').innerHTML = (p.base_variant || p.top_variant)
